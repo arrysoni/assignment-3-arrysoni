@@ -193,6 +193,7 @@ int mdadm_write(uint32_t start_addr, uint32_t write_len, const uint8_t *write_bu
 	// YOUR CODE GOES HERE
 
 	// Check if system is mounted
+	// The first two if statements are the highest priority ones
 	if (check_mount == 0)
 	{
 		return -3;
@@ -228,14 +229,14 @@ int mdadm_write(uint32_t start_addr, uint32_t write_len, const uint8_t *write_bu
 
 	uint32_t addr = start_addr; // Current address to write to
 	uint8_t buffer_array[256];	// Buffer to hold block data
-	int bytes_written = 0;
+	int bytes_written = 0;		// Track the number of bytes written
 
 	while (bytes_written < write_len)
 	{
 		// Calculate disk, block, and offset within the block
 		int current_Disk = addr / JBOD_DISK_SIZE;
 		int current_Block = (addr / JBOD_BLOCK_SIZE) % JBOD_NUM_BLOCKS_PER_DISK;
-		int current_PosInBlock = addr % JBOD_DISK_SIZE % JBOD_BLOCK_SIZE;
+		int current_PosInBlock = (addr % JBOD_DISK_SIZE) % JBOD_BLOCK_SIZE;
 
 		// Seek to the correct disk
 		uint32_t op_seek_disk = (JBOD_SEEK_TO_DISK << 12) | current_Disk;
@@ -257,19 +258,32 @@ int mdadm_write(uint32_t start_addr, uint32_t write_len, const uint8_t *write_bu
 			return -1;
 		}
 
-		// Determine how many bytes to write to the current block
-		int bytes_left_in_block = JBOD_BLOCK_SIZE - current_PosInBlock;
+		int bytes_left_in_block = JBOD_BLOCK_SIZE - current_PosInBlock; // The number of bytes to write into
 		bytes_left_in_block = bytes_left_in_block > write_len - bytes_written ? write_len - bytes_written : bytes_left_in_block;
 		// Copy data from write_buf to buffer_array, starting at current_PosInBlock
 		memcpy(buffer_array + current_PosInBlock, write_buf + bytes_written, bytes_left_in_block);
+
+		// We need to seek to disk and block once again in order to adjust the pointer to where we need to start writing from again.
+		op_seek_disk = (JBOD_SEEK_TO_DISK << 12) | current_Disk;
+		if (jbod_operation(op_seek_disk, NULL) != 0)
+		{
+			return -1;
+		}
+
+		// Seek to the correct block
+		op_seek_block = (JBOD_SEEK_TO_BLOCK << 12) | (current_Block << 4);
+		if (jbod_operation(op_seek_block, NULL) != 0)
+		{
+			return -1;
+		}
 
 		if (jbod_operation(JBOD_WRITE_BLOCK << 12, buffer_array) != 0)
 		{
 			return -1;
 		}
 
-		addr += bytes_left_in_block;
-		bytes_written += bytes_left_in_block;
+		addr += bytes_left_in_block;		  // Updating the addr pointer
+		bytes_written += bytes_left_in_block; // Tracking the number of bytes written
 	}
 
 	return write_len;
