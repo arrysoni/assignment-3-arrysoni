@@ -63,3 +63,10 @@ Writes are only allowed:
 Run:
 ```bash
 ./tester
+
+./tester -w traces/simple-input
+./tester -w traces/linear-input
+./tester -w traces/random-input
+./tester -w traces/simple-input > my-output
+diff -u my-output traces/simple-expected-output
+
